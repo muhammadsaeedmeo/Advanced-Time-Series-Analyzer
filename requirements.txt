@@ -2,6 +2,8 @@ streamlit
 pandas
 numpy
 matplotlib
-openpyxl
-xlsxwriter
-temporal-disaggregation
+seaborn
+plotly
+prophet
+statsmodels
+tabulate
