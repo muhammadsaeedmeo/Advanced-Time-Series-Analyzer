@@ -309,9 +309,9 @@ axc.set_title("Correlation Heatmap", fontsize=14, weight="bold")
 st.pyplot(fig_c)
 
 # ======================================================================
-# 🟩 SECTION 9: DISTRIBUTION COMPARISON
+# 🟩 SECTION 9: DISTRIBUTION COMPARISON & NORMALITY TESTS
 # ======================================================================
-st.header("📊 Distribution Comparison")
+st.header("📊 Distribution Comparison & Normality Assessment")
 
 col_to_plot = st.selectbox("Select numeric variable for distribution analysis", numeric_cols, key="dist_col")
 
@@ -322,6 +322,7 @@ sns.set_style(sns_style)
 plt.style.use(plt_style)
 
 def create_distribution_chart(data_series, y_label, title):
+    """Creates comprehensive distribution visualization with 4 plot types"""
     fig, axes = plt.subplots(1, 4, figsize=(16, 5), sharey=True)
     
     mean_val = data_series.mean()
@@ -354,8 +355,16 @@ if col_to_plot:
     fig = create_distribution_chart(df[col_to_plot].dropna(), y_label=col_to_plot, title=f"Distribution Overview: {col_to_plot}")
     st.pyplot(fig)
     
+    st.markdown("""
+    **📖 How to Interpret:**
+    - **Bar Plot:** Shows mean value with error bars (±1 standard deviation)
+    - **Box Plot:** Displays quartiles (Q1, median, Q3) and outliers
+    - **Violin Plot:** Combines box plot with kernel density estimation
+    - **Strip Plot:** Shows all individual data points with mean reference line
+    """)
+    
     # Normality test
-    st.subheader("Normality Tests")
+    st.subheader("🔬 Normality Tests")
     data_clean = df[col_to_plot].dropna()
     
     # Jarque-Bera test
@@ -372,11 +381,19 @@ if col_to_plot:
         'Test': ['Jarque-Bera', 'Shapiro-Wilk'],
         'Statistic': [round(jb_stat, 4), round(sw_stat, 4)],
         'p-value': [round(jb_pval, 4), round(sw_pval, 4)],
-        'Normal?': ['Yes' if jb_pval > 0.05 else 'No', 'Yes' if sw_pval > 0.05 else 'No']
+        'Normal?': ['Yes ✓' if jb_pval > 0.05 else 'No ✗', 'Yes ✓' if sw_pval > 0.05 else 'No ✗']
     })
     
     st.dataframe(norm_results, use_container_width=True)
-    st.markdown("**H0:** Data is normally distributed | **H1:** Data is not normally distributed")
+    
+    st.markdown("""
+    **📖 Interpretation Guide:**
+    - **H₀ (Null Hypothesis):** Data follows a normal distribution
+    - **H₁ (Alternative Hypothesis):** Data does NOT follow a normal distribution
+    - **Decision Rule:** If p-value < 0.05, reject H₀ (data is not normal)
+    - **Jarque-Bera Test:** Based on skewness and kurtosis
+    - **Shapiro-Wilk Test:** More powerful for small to medium sample sizes
+    """)
 
 # ======================================================================
 # 🟩 SECTION 10: SEASONAL DECOMPOSITION (IMPROVED)
