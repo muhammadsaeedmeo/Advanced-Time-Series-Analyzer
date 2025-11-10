@@ -813,10 +813,11 @@ if st.button("Run Proper QQR Analysis", key="qqr_run2"):
             showlegend=True
         ))
         
+        # FIXED: Correct parameter names for update_layout
         fig_compare.update_layout(
             title=f'Robustness Check: QQR vs Standard QR {title_suffix}',
-            x_title='Quantile (τ)',
-            y_title='Coefficient Value',
+            xaxis_title='Quantile (τ)',  # FIXED: was x_title
+            yaxis_title='Coefficient Value',  # FIXED: was y_title
             template="plotly_white",
             width=800,
             height=500,
@@ -832,28 +833,31 @@ if st.button("Run Proper QQR Analysis", key="qqr_run2"):
                                     np.array(qr_coefficients)[valid_mask])[0,1]
             
             # Statistical tests for similarity
-            from scipy.stats import ttest_rel, wilcoxon
+            from scipy.stats import ttest_rel
             
             # Remove NaN pairs for statistical tests
             qqr_clean = qqr_averages[valid_mask]
             qr_clean = np.array(qr_coefficients)[valid_mask]
             
-            t_stat, t_pvalue = ttest_rel(qqr_clean, qr_clean)
+            try:
+                t_stat, t_pvalue = ttest_rel(qqr_clean, qr_clean)
+            except:
+                t_pvalue = np.nan
             
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Correlation (QQR vs QR)", f"{correlation:.4f}")
             with col2:
-                st.metric("T-test p-value", f"{t_pvalue:.4f}")
+                st.metric("T-test p-value", f"{t_pvalue:.4f}" if not np.isnan(t_pvalue) else "N/A")
             with col3:
                 st.metric("Mean QQR", f"{np.nanmean(qqr_averages):.4f}")
             with col4:
                 st.metric("Mean QR", f"{np.nanmean(qr_coefficients):.4f}")
             
             # Interpretation
-            if abs(correlation) > 0.8 and t_pvalue > 0.05:
+            if abs(correlation) > 0.8 and (np.isnan(t_pvalue) or t_pvalue > 0.05):
                 st.success("✅ Excellent agreement between QQR and QR - results are highly robust!")
-            elif abs(correlation) > 0.6 and t_pvalue > 0.05:
+            elif abs(correlation) > 0.6 and (np.isnan(t_pvalue) or t_pvalue > 0.05):
                 st.info("ℹ️ Good agreement between QQR and QR - results are robust")
             else:
                 st.warning("⚠️ Moderate disagreement between methods - interpret QQR patterns carefully")
