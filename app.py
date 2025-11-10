@@ -19,6 +19,40 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ======================================================================
+# 🟩 PASSWORD PROTECTION
+# ======================================================================
+def check_password():
+    """Returns `True` if the user entered the correct password."""
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["password"] == "1992":
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Don't store the password.
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # First run, show input for password.
+        st.text_input(
+            "Enter Password", type="password", on_change=password_entered, key="password"
+        )
+        st.write("*Please enter the password to access the application*")
+        return False
+    elif not st.session_state["password_correct"]:
+        # Password not correct, show input + error.
+        st.text_input(
+            "Enter Password", type="password", on_change=password_entered, key="password"
+        )
+        st.error("😕 Password incorrect")
+        return False
+    else:
+        # Password correct.
+        return True
+
+if not check_password():
+    st.stop()  # Do not continue if check_password is not True.
+
+# ======================================================================
 # 🟩 BASIC CONFIGURATION
 # ======================================================================
 st.set_page_config(layout="wide", page_title="Advanced Time Series Analyzer")
@@ -528,9 +562,9 @@ if st.button("Run Granger Causality Test"):
         st.error(f"Error while running Granger Causality Test: {e}")
 
 # ======================================================================
-# 🟩 SECTION 12: QUANTILE-ON-QUANTILE REGRESSION (KEPT AS IS)
+# 🟩 SECTION 12: QUANTILE-ON-QUANTILE REGRESSION (QQR) WITH ROBUSTNESS CHECK
 # ======================================================================
-st.header("📈 Quantile-on-Quantile Regression (QQR)")
+st.header("📈 Quantile-on-Quantile Regression (QQR) with Robustness Check")
 
 q_y = st.selectbox("Dependent variable (Y)", numeric_cols, index=0, key="qqr_y2")
 q_x = st.selectbox("Independent variable (X)", [c for c in numeric_cols if c != q_y], index=0, key="qqr_x2")
@@ -544,27 +578,28 @@ if panel_col:
 
 quantile_n = st.slider("Number of Quantiles", 5, 30, 10, key="qqr_quantiles2")
 
-if st.button("Run QQR", key="qqr_run2"):
-    def run_qqr(y, x, title_suffix=""):
+if st.button("Run QQR with Robustness Check", key="qqr_run2"):
+    def run_qqr_with_robustness(y, x, title_suffix=""):
         data = pd.concat([y, x], axis=1).dropna()
         if data.empty or len(data) < 10:
             st.warning(f"⚠️ Insufficient observations for {title_suffix}")
             return
 
-        y, x = data.iloc[:, 0], data.iloc[:, 1]
+        y_data, x_data = data.iloc[:, 0], data.iloc[:, 1]
         qs = np.linspace(0.05, 0.95, quantile_n)
         z_matrix = np.full((len(qs), len(qs)), np.nan)
 
         for i, q1 in enumerate(qs):
-            y_cut = y[y <= np.quantile(y, q1)]
+            y_cut = y_data[y_data <= np.quantile(y_data, q1)]
             for j, q2 in enumerate(qs):
-                x_cut = x[x <= np.quantile(x, q2)]
+                x_cut = x_data[x_data <= np.quantile(x_data, q2)]
                 common = min(len(y_cut), len(x_cut))
                 if common > 3:
                     z_matrix[i, j] = np.corrcoef(y_cut.iloc[:common], x_cut.iloc[:common])[0, 1]
 
         z_matrix = np.nan_to_num(z_matrix, nan=0.0)
 
+        # Original QQR plots
         fig_hm = go.Figure(
             go.Heatmap(
                 z=z_matrix,
@@ -605,14 +640,118 @@ if st.button("Run QQR", key="qqr_run2"):
             template="plotly_white"
         )
         st.plotly_chart(fig_3d, use_container_width=True)
+        
+        # ======================================================================
+        # 🟩 ROBUSTNESS CHECK: QQR vs QR COMPARISON
+        # ======================================================================
+        st.subheader("🔍 Robustness Check: QQR vs Quantile Regression (QR)")
+        
+        # Calculate QQR averages (top to down - average for each dependent quantile)
+        qqr_averages = np.mean(z_matrix, axis=1)  # Average across columns for each row
+        
+        # Run standard Quantile Regression for comparison
+        from statsmodels.regression.quantile_regression import QuantReg
+        import statsmodels.api as sm
+        
+        qr_coefficients = []
+        qr_pvalues = []
+        
+        for q in qs:
+            try:
+                # Add constant for intercept
+                X = sm.add_constant(x_data)
+                model = QuantReg(y_data, X).fit(q=q)
+                qr_coefficients.append(model.params[1])  # Coefficient for x
+                qr_pvalues.append(model.pvalues[1])
+            except Exception as e:
+                st.warning(f"QR failed for quantile {q:.2f}: {e}")
+                qr_coefficients.append(np.nan)
+                qr_pvalues.append(np.nan)
+        
+        # Create comparison dataframe
+        comparison_df = pd.DataFrame({
+            'Quantile': qs,
+            'QQR_Average': qqr_averages,
+            'QR_Coefficient': qr_coefficients,
+            'QR_PValue': qr_pvalues
+        })
+        
+        st.subheader("📊 QQR vs QR Comparison Table")
+        st.dataframe(comparison_df.round(4), use_container_width=True)
+        
+        # Plot comparison
+        fig_compare = go.Figure()
+        
+        # Add QQR trend line
+        fig_compare.add_trace(go.Scatter(
+            x=qs, y=qqr_averages,
+            mode='lines+markers',
+            name='QQR Average',
+            line=dict(color='blue', width=3),
+            marker=dict(size=8)
+        ))
+        
+        # Add QR trend line
+        fig_compare.add_trace(go.Scatter(
+            x=qs, y=qr_coefficients,
+            mode='lines+markers',
+            name='QR Coefficient',
+            line=dict(color='red', width=3, dash='dash'),
+            marker=dict(size=8)
+        ))
+        
+        fig_compare.update_layout(
+            title=f'Robustness Check: QQR vs QR Comparison {title_suffix}',
+            xaxis_title='Quantiles',
+            yaxis_title='Coefficient Value',
+            template="plotly_white",
+            width=800,
+            height=500,
+            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+        )
+        
+        st.plotly_chart(fig_compare, use_container_width=True)
+        
+        # Calculate correlation between QQR averages and QR coefficients
+        valid_indices = ~np.isnan(qr_coefficients)
+        if np.sum(valid_indices) > 1:
+            correlation = np.corrcoef(qqr_averages[valid_indices], 
+                                    np.array(qr_coefficients)[valid_indices])[0,1]
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Correlation (QQR vs QR)", f"{correlation:.4f}")
+            with col2:
+                st.metric("Mean QQR Average", f"{np.mean(qqr_averages):.4f}")
+            with col3:
+                st.metric("Mean QR Coefficient", f"{np.nanmean(qr_coefficients):.4f}")
+            
+            if abs(correlation) > 0.7:
+                st.success("✅ High correlation between QQR and QR methods - results are robust!")
+            elif abs(correlation) > 0.5:
+                st.info("ℹ️ Moderate correlation between QQR and QR methods")
+            else:
+                st.warning("⚠️ Low correlation between QQR and QR methods - interpret with caution")
+        
+        # Download comparison results
+        excel_buf = io.BytesIO()
+        with pd.ExcelWriter(excel_buf, engine="openpyxl") as writer:
+            comparison_df.to_excel(writer, index=False, sheet_name="QQR_QR_Comparison")
+            
+        st.download_button(
+            label="📥 Download QQR vs QR Comparison (Excel)",
+            data=excel_buf.getvalue(),
+            file_name="qqr_qr_comparison.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     if panel_col and selected_groups:
         for grp in selected_groups:
             subset = df[df[panel_col] == grp]
             st.subheader(f"{panel_col}: {grp}")
-            run_qqr(subset[q_y], subset[q_x], f"({grp})")
+            run_qqr_with_robustness(subset[q_y], subset[q_x], f"({grp})")
     else:
-        run_qqr(df[q_y], df[q_x])
+        run_qqr_with_robustness(df[q_y], df[q_x])
 
 # ======================================================================
 # 🟩 SECTION 13: MACHINE LEARNING FORECASTING (IMPROVED)
@@ -813,6 +952,8 @@ st.download_button("Download CSV of processed data", csv_bytes,
 st.sidebar.header("Help & Documentation")
 st.sidebar.markdown("""
 **Key Improvements:**
+- ✅ Password protection added
+- ✅ QQR robustness check with QR comparison
 - ✅ ACF/PACF plots for ARIMA modeling
 - ✅ All lags tested in Granger causality
 - ✅ Train/test split for forecasting
@@ -827,6 +968,7 @@ st.sidebar.markdown("""
 - Look for multiple significant lags
 - Validate forecasts on test data
 - Examine residual diagnostics
+- Check robustness of QQR findings
 """)
 
 st.sidebar.markdown("Run locally: `streamlit run app.py`")
