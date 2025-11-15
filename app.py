@@ -700,7 +700,7 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
     )
     st.plotly_chart(fig_hm, use_container_width=True)
 
-    # --- 3D Surface
+    # --- 3D Surface (FIXED: proper axis alignment)
     st.subheader("📈 QQR 3D Surface")
     fig_3d = go.Figure(data=[go.Surface(
         z=beta_matrix,
@@ -711,8 +711,20 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
     )])
     fig_3d.update_layout(
         scene=dict(
-            xaxis_title=f"{q_x} Quantiles (θ)",
-            yaxis_title=f"{q_y} Quantiles (τ)",
+            xaxis=dict(
+                title=f"{q_x} Quantiles (θ)",
+                range=[0.05, 0.95],
+                tickmode='linear',
+                tick0=0.05,
+                dtick=0.1
+            ),
+            yaxis=dict(
+                title=f"{q_y} Quantiles (τ)",
+                range=[0.05, 0.95],
+                tickmode='linear',
+                tick0=0.05,
+                dtick=0.1
+            ),
             zaxis_title="Coefficient"
         ),
         title=f"3D QQR Surface {title_suffix}",
@@ -828,7 +840,6 @@ if st.button("Run Proper QQR Analysis", key="qqr_run2"):
             run_qqr_with_robustness(subset[q_y], subset[q_x], f"({grp})")
     else:
         run_qqr_with_robustness(df[q_y], df[q_x])
-
 
 # ======================================================================
 # 🟩 SECTION 13: MACHINE LEARNING FORECASTING (IMPROVED)
