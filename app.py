@@ -714,7 +714,7 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
         scene=dict(
             xaxis=dict(
                 title=f"{q_x} Quantiles (θ)",
-                range=[0.0, 1.0],
+                range=[0.05, 0.95],
                 tickmode='array',
                 tickvals=[0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90],
                 ticktext=['0.10', '0.20', '0.30', '0.40', '0.50', '0.60', '0.70', '0.80', '0.90'],
@@ -722,7 +722,7 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
             ),
             yaxis=dict(
                 title=f"{q_y} Quantiles (τ)",
-                range=[0.0, 1.0],
+                range=[0.05, 0.95],
                 tickmode='array',
                 tickvals=[0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90],
                 ticktext=['0.10', '0.20', '0.30', '0.40', '0.50', '0.60', '0.70', '0.80', '0.90'],
@@ -846,7 +846,6 @@ if st.button("Run Proper QQR Analysis", key="qqr_run2"):
             run_qqr_with_robustness(subset[q_y], subset[q_x], f"({grp})")
     else:
         run_qqr_with_robustness(df[q_y], df[q_x])
-        
 # ======================================================================
 # 🟩 SECTION 13: MACHINE LEARNING FORECASTING (IMPROVED)
 # ======================================================================
