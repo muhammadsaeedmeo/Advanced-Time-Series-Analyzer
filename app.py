@@ -701,6 +701,7 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
     st.plotly_chart(fig_hm, use_container_width=True)
 
     # --- 3D Surface (FIXED: proper axis alignment with full range visibility)
+    # NOTE: Quantiles displayed from 0.10 to 0.90 with 0.10 intervals for cleaner visualization
     st.subheader("📈 QQR 3D Surface")
     fig_3d = go.Figure(data=[go.Surface(
         z=beta_matrix,
@@ -715,16 +716,16 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
                 title=f"{q_x} Quantiles (θ)",
                 range=[0.0, 1.0],
                 tickmode='array',
-                tickvals=[0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95],
-                ticktext=['0.05', '0.15', '0.25', '0.35', '0.45', '0.55', '0.65', '0.75', '0.85', '0.95'],
+                tickvals=[0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90],
+                ticktext=['0.10', '0.20', '0.30', '0.40', '0.50', '0.60', '0.70', '0.80', '0.90'],
                 autorange='reversed'
             ),
             yaxis=dict(
                 title=f"{q_y} Quantiles (τ)",
                 range=[0.0, 1.0],
                 tickmode='array',
-                tickvals=[0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95],
-                ticktext=['0.05', '0.15', '0.25', '0.35', '0.45', '0.55', '0.65', '0.75', '0.85', '0.95'],
+                tickvals=[0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90],
+                ticktext=['0.10', '0.20', '0.30', '0.40', '0.50', '0.60', '0.70', '0.80', '0.90'],
                 autorange='reversed'
             ),
             zaxis_title="Coefficient",
@@ -732,7 +733,7 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
                 eye=dict(x=1.5, y=1.5, z=1.3)
             )
         ),
-        title=f"3D QQR Surface {title_suffix}",
+        title=f"3D QQR Surface {title_suffix} (Quantiles: 0.10 to 0.90)",
         width=900,
         height=700,
         margin=dict(l=0, r=0, b=0, t=50),
@@ -845,6 +846,7 @@ if st.button("Run Proper QQR Analysis", key="qqr_run2"):
             run_qqr_with_robustness(subset[q_y], subset[q_x], f"({grp})")
     else:
         run_qqr_with_robustness(df[q_y], df[q_x])
+        
 # ======================================================================
 # 🟩 SECTION 13: MACHINE LEARNING FORECASTING (IMPROVED)
 # ======================================================================
