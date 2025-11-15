@@ -602,8 +602,10 @@ def proper_qqr_analysis(y, x, bandwidth, quantile_n, title_suffix=""):
     y_data, x_data = data.iloc[:, 0], data.iloc[:, 1]
     n = len(y_data)
 
-    tau_quantiles = np.linspace(0.05, 0.95, quantile_n)
-    theta_quantiles = np.linspace(0.05, 0.95, quantile_n)
+    # ************* FIXED QUANTILE GRID *************
+    tau_quantiles   = np.linspace(0.10, 0.90, quantile_n)
+    theta_quantiles = np.linspace(0.10, 0.90, quantile_n)
+    # ************************************************
 
     beta_matrix = np.full((len(tau_quantiles), len(theta_quantiles)), np.nan)
     t_stat_matrix = np.full_like(beta_matrix, np.nan)
@@ -632,7 +634,7 @@ def proper_qqr_analysis(y, x, bandwidth, quantile_n, title_suffix=""):
 
                 X_design = sm.add_constant(x_data)
 
-                # Weighted Quantile Regression (try first)
+                # Weighted Quantile Regression
                 try:
                     model = QuantReg(y_data, X_design)
                     result = model.fit(q=tau, weights=weights, max_iter=1000)
@@ -644,8 +646,8 @@ def proper_qqr_analysis(y, x, bandwidth, quantile_n, title_suffix=""):
                     t_stat_matrix[i, j] = getattr(result, "tvalues", [np.nan, np.nan])[1]
                     p_value_matrix[i, j] = getattr(result, "pvalues", [np.nan, np.nan])[1]
 
-            except Exception as e:
-                # fallback: local unweighted QR on top-K highest weights
+            except Exception:
+                # fallback local QR
                 try:
                     K = max(30, int(0.2 * n))
                     idx_top = np.argsort(weights)[-K:]
@@ -678,7 +680,8 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
         st.warning("⚠️ No valid QQR coefficients estimated. Try larger bandwidth or fewer quantiles.")
         return
 
-    theta_quantiles = np.linspace(0.05, 0.95, quantile_n)
+    # MUST match updated grid
+    theta_quantiles = np.linspace(0.10, 0.90, quantile_n)
 
     # --- Coefficient Heatmap
     st.subheader("📊 QQR Coefficient Heatmap")
@@ -700,8 +703,7 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
     )
     st.plotly_chart(fig_hm, use_container_width=True)
 
-    # --- 3D Surface (FIXED: proper axis alignment with full range visibility)
-    # NOTE: Quantiles displayed from 0.10 to 0.90 with 0.10 intervals for cleaner visualization
+    # --- 3D Surface
     st.subheader("📈 QQR 3D Surface")
     fig_3d = go.Figure(data=[go.Surface(
         z=beta_matrix,
@@ -714,24 +716,20 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
         scene=dict(
             xaxis=dict(
                 title=f"{q_x} Quantiles (θ)",
-                range=[0.05, 0.95],
+                range=[0.10, 0.90],
                 tickmode='array',
-                tickvals=[0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90],
-                ticktext=['0.10', '0.20', '0.30', '0.40', '0.50', '0.60', '0.70', '0.80', '0.90'],
+                tickvals=[0.10,0.20,0.30,0.40,0.50,0.60,0.70,0.80,0.90],
                 autorange='reversed'
             ),
             yaxis=dict(
                 title=f"{q_y} Quantiles (τ)",
-                range=[0.05, 0.95],
+                range=[0.10, 0.90],
                 tickmode='array',
-                tickvals=[0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90],
-                ticktext=['0.10', '0.20', '0.30', '0.40', '0.50', '0.60', '0.70', '0.80', '0.90'],
+                tickvals=[0.10,0.20,0.30,0.40,0.50,0.60,0.70,0.80,0.90],
                 autorange='reversed'
             ),
             zaxis_title="Coefficient",
-            camera=dict(
-                eye=dict(x=1.5, y=1.5, z=1.3)
-            )
+            camera=dict(eye=dict(x=1.5, y=1.5, z=1.3))
         ),
         title=f"3D QQR Surface {title_suffix} (Quantiles: 0.10 to 0.90)",
         width=900,
@@ -789,7 +787,7 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
     })
     st.dataframe(comparison_df.round(4), use_container_width=True)
 
-    # Plot comparison
+    # comparison plot
     fig_cmp = go.Figure()
     fig_cmp.add_trace(go.Scatter(x=tau_quantiles, y=qqr_avg, mode="lines+markers", name="QQR Avg", line=dict(color="blue")))
     fig_cmp.add_trace(go.Scatter(x=tau_quantiles, y=qr_coeff, mode="lines+markers", name="QR Coef", line=dict(color="red", dash="dash")))
@@ -810,7 +808,6 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
     )
     st.plotly_chart(fig_cmp, use_container_width=True)
 
-    # Correlation metrics
     mask = ~np.isnan(qr_coeff) & ~np.isnan(qqr_avg)
     if np.sum(mask) > 2:
         corr = np.corrcoef(np.array(qr_coeff)[mask], qqr_avg[mask])[0, 1]
@@ -846,6 +843,7 @@ if st.button("Run Proper QQR Analysis", key="qqr_run2"):
             run_qqr_with_robustness(subset[q_y], subset[q_x], f"({grp})")
     else:
         run_qqr_with_robustness(df[q_y], df[q_x])
+
 # ======================================================================
 # 🟩 SECTION 13: MACHINE LEARNING FORECASTING (IMPROVED)
 # ======================================================================
