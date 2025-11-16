@@ -562,32 +562,134 @@ if st.button("Run Granger Causality Test"):
         st.error(f"Error while running Granger Causality Test: {e}")
 
 # ======================================================================
-# Visualization + Robustness
+# QQR SECTION (FULL FINAL VERSION)
+# ======================================================================
+import io
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import statsmodels.api as sm
+from statsmodels.regression.quantile_regression import QuantReg
+from scipy.stats import ttest_rel
+
+st.header("📈 Quantile-on-Quantile Regression (QQR) - Econometric Implementation")
+
+q_y = st.selectbox("Dependent variable (Y)", numeric_cols, index=0, key="qqr_y2")
+q_x = st.selectbox("Independent variable (X)", [c for c in numeric_cols if c != q_y],
+                   index=0, key="qqr_x2")
+
+potential_panels = [col for col in df.columns
+                    if col.lower() in ["country", "id", "entity", "firm", "region"]]
+
+panel_col = potential_panels[0] if potential_panels else None
+if panel_col:
+    all_groups = df[panel_col].dropna().unique().tolist()
+    selected_groups = st.multiselect(f"Select {panel_col}",
+                                     all_groups,
+                                     default=all_groups[:3])
+else:
+    selected_groups = None
+
+quantile_n = st.slider("Number of Quantiles", 5, 30, 10, key="qqr_quantiles2")
+bandwidth = st.slider("Bandwidth", 0.01, 0.5, 0.05, 0.01, key="qqr_bandwidth")
+
+
+# ======================================================================
+# Core QQR Function
+# ======================================================================
+def proper_qqr_analysis(y, x, bandwidth, quantile_n, title_suffix=""):
+
+    data = pd.concat([y, x], axis=1).dropna()
+    if data.empty or len(data) < 20:
+        st.warning(f"Insufficient observations for QQR {title_suffix}")
+        return None, None, None, None
+
+    y_data, x_data = data.iloc[:, 0], data.iloc[:, 1]
+
+    tau_q = np.linspace(0.10, 0.90, quantile_n)
+    theta_q = np.linspace(0.10, 0.90, quantile_n)
+
+    beta = np.full((len(tau_q), len(theta_q)), np.nan)
+    tvals = np.full_like(beta, np.nan)
+    pvals = np.full_like(beta, np.nan)
+
+    progress = st.progress(0)
+    status = st.empty()
+
+    def kernel(u, h):
+        return np.exp(-0.5*(u/h)**2) / (h*np.sqrt(2*np.pi))
+
+    total = len(tau_q)*len(theta_q)
+    step = 0
+
+    for i, tau in enumerate(tau_q):
+        for j, theta in enumerate(theta_q):
+
+            try:
+                x_theta = np.quantile(x_data, theta)
+                weights = kernel(x_data - x_theta, h=bandwidth)
+
+                if np.sum(weights > 1e-6) < 10:
+                    step += 1
+                    progress.progress(step/total)
+                    continue
+
+                X = sm.add_constant(x_data)
+
+                try:
+                    model = QuantReg(y_data, X)
+                    res = model.fit(q=tau, weights=weights, max_iter=1000)
+                except TypeError:
+                    raise RuntimeError("Weighted QR not supported.")
+
+                beta[i, j] = res.params[1]
+                tvals[i, j] = res.tvalues[1]
+                pvals[i, j] = res.pvalues[1]
+
+            except Exception:
+                try:
+                    K = max(30, int(0.2*len(y_data)))
+                    idx = np.argsort(weights)[-K:]
+                    Xloc = sm.add_constant(x_data.iloc[idx])
+                    yloc = y_data.iloc[idx]
+                    rloc = QuantReg(yloc, Xloc).fit(q=tau)
+                    beta[i, j] = rloc.params[1]
+                    tvals[i, j] = rloc.tvalues[1]
+                    pvals[i, j] = rloc.pvalues[1]
+                except:
+                    pass
+
+            step += 1
+            progress.progress(step/total)
+            status.text(f"Estimating QQR: {step}/{total}")
+
+    progress.empty()
+    status.empty()
+    return beta, tvals, pvals, tau_q
+
+
+# ======================================================================
+# Visualization & Robustness
 # ======================================================================
 def run_qqr_with_robustness(y, x, title_suffix=""):
-    beta_matrix, t_stats, p_values, tau_quantiles = proper_qqr_analysis(
+
+    beta, tstats, pvals, tau_q = proper_qqr_analysis(
         y, x, bandwidth, quantile_n, title_suffix
     )
-
-    if beta_matrix is None or np.all(np.isnan(beta_matrix)):
-        st.warning("⚠️ No valid QQR coefficients estimated. Try larger bandwidth or fewer quantiles.")
+    if beta is None:
         return
 
-    # ---------------------------------------------------------
-    # FIX: use *same* theta grid as in estimation, not new one
-    # ---------------------------------------------------------
-    theta_quantiles = np.linspace(0.10, 0.90, quantile_n)
-    # ---------------------------------------------------------
+    theta_q = np.linspace(0.10, 0.90, quantile_n)
 
-    # --- Coefficient Heatmap
-    st.subheader("📊 QQR Coefficient Heatmap")
+    # ======================= FIXED: Both plots numeric ======================
+    st.subheader("QQR Coefficient Heatmap")
     fig_hm = go.Figure(go.Heatmap(
-        z=beta_matrix,
-        x=[f"{q:.2f}" for q in theta_quantiles],
-        y=[f"{q:.2f}" for q in tau_quantiles],
+        z=beta,
+        x=theta_q,    # numeric, NOT strings
+        y=tau_q,      # numeric, NOT strings
         colorscale="RdBu_r",
-        colorbar_title="Coefficient",
-        zmid=0
+        zmid=0,
+        colorbar_title="Coefficient"
     ))
     fig_hm.update_layout(
         title=f"QQR Coefficients {title_suffix}",
@@ -599,42 +701,117 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
     )
     st.plotly_chart(fig_hm, use_container_width=True)
 
-    # --- 3D Surface Plot
-    st.subheader("📈 QQR 3D Surface")
+    # ======================= 3D SURFACE (matching exactly) ==================
+    st.subheader("QQR 3D Surface")
     fig_3d = go.Figure(data=[go.Surface(
-        z=beta_matrix,
-        x=theta_quantiles,
-        y=tau_quantiles,
+        z=beta,
+        x=theta_q,
+        y=tau_q,
         colorscale="RdBu_r",
         showscale=True
     )])
     fig_3d.update_layout(
         scene=dict(
-            xaxis=dict(
-                title=f"{q_x} Quantiles (θ)",
-                range=[0.10, 0.90],
-                tickmode='array',
-                tickvals=theta_quantiles,
-                autorange='reversed'
-            ),
-            yaxis=dict(
-                title=f"{q_y} Quantiles (τ)",
-                range=[0.10, 0.90],
-                tickmode='array',
-                tickvals=tau_quantiles,
-                autorange='reversed'
-            ),
-            zaxis_title="Coefficient",
-            camera=dict(eye=dict(x=1.5, y=1.5, z=1.3))
+            xaxis=dict(title=f"{q_x} Quantiles (θ)"),
+            yaxis=dict(title=f"{q_y} Quantiles (τ)"),
+            zaxis=dict(title="Coefficient")
         ),
-        title=f"3D QQR Surface {title_suffix} (Quantiles: 0.10 to 0.90)",
+        title=f"3D QQR Surface {title_suffix}",
+        template="plotly_white",
         width=900,
-        height=700,
-        margin=dict(l=0, r=0, b=0, t=50),
-        template="plotly_white"
+        height=650
     )
     st.plotly_chart(fig_3d, use_container_width=True)
 
+    # ======================= SIGNIFICANCE =======================
+    st.subheader("Significant Coefficients (p < 0.05)")
+    sig = np.where(pvals < 0.05, beta, np.nan)
+    fig_sig = go.Figure(go.Heatmap(
+        z=sig,
+        x=theta_q,
+        y=tau_q,
+        colorscale="RdBu_r",
+        zmid=0
+    ))
+    st.plotly_chart(fig_sig, use_container_width=True)
+
+    # ======================= Robustness QQR vs QR =======================
+    st.subheader("Robustness: QQR vs QR")
+
+    qqr_avg = np.nanmean(beta, axis=1)
+    X = sm.add_constant(x)
+
+    qr_coef = []
+    ci_lo, ci_hi = [], []
+
+    for tau in tau_q:
+        try:
+            r = QuantReg(y, X).fit(q=tau)
+            qr_coef.append(r.params[1])
+            ci = r.conf_int()
+            ci_lo.append(ci.iloc[1, 0])
+            ci_hi.append(ci.iloc[1, 1])
+        except:
+            qr_coef.append(np.nan)
+            ci_lo.append(np.nan)
+            ci_hi.append(np.nan)
+
+    comp = pd.DataFrame({
+        "Quantile": tau_q,
+        "QQR_Avg": qqr_avg,
+        "QR": qr_coef,
+        "CI_L": ci_lo,
+        "CI_U": ci_hi
+    })
+    st.dataframe(comp.round(4), use_container_width=True)
+
+    fig_cmp = go.Figure()
+    fig_cmp.add_trace(go.Scatter(x=tau_q, y=qqr_avg,
+                                 mode="lines+markers", name="QQR Avg"))
+    fig_cmp.add_trace(go.Scatter(x=tau_q, y=qr_coef,
+                                 mode="lines+markers", name="QR Coef"))
+    fig_cmp.add_trace(go.Scatter(
+        x=tau_q.tolist() + tau_q[::-1].tolist(),
+        y=ci_hi + ci_lo[::-1],
+        fill="toself", fillcolor="rgba(255,0,0,0.2)",
+        line=dict(color="rgba(255,255,255,0)")
+    ))
+    st.plotly_chart(fig_cmp, use_container_width=True)
+
+    mask = ~np.isnan(qqr_avg) & ~np.isnan(qr_coef)
+    if mask.sum() > 2:
+        corr = np.corrcoef(np.array(qr_coef)[mask], qqr_avg[mask])[0, 1]
+        t_stat, p_val = ttest_rel(np.array(qr_coef)[mask], qqr_avg[mask])
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Correlation", f"{corr:.4f}")
+        c2.metric("t-test p-value", f"{p_val:.4f}")
+        c3.metric("Mean Diff", f"{np.nanmean(qqr_avg - np.array(qr_coef)):.4f}")
+
+    # download
+    buff = io.BytesIO()
+    with pd.ExcelWriter(buff, engine="openpyxl") as writer:
+        pd.DataFrame(beta).to_excel(writer, sheet_name="QQR")
+        comp.to_excel(writer, sheet_name="QR", index=False)
+
+    st.download_button(
+        label="Download QQR Results",
+        data=buff.getvalue(),
+        file_name="qqr_results.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+# ======================================================================
+# Run QQR
+# ======================================================================
+if st.button("Run Proper QQR Analysis", key="qqr_run2"):
+    if panel_col and selected_groups:
+        for grp in selected_groups:
+            subset = df[df[panel_col] == grp]
+            st.subheader(f"{panel_col}: {grp}")
+            run_qqr_with_robustness(subset[q_y], subset[q_x], f"({grp})")
+    else:
+        run_qqr_with_robustness(df[q_y], df[q_x])
 
 # ======================================================================
 # 🟩 SECTION 13: MACHINE LEARNING FORECASTING (IMPROVED)
