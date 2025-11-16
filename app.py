@@ -685,13 +685,21 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
 
     # --- Coefficient Heatmap (FIXED)
     st.subheader("📊 QQR Coefficient Heatmap")
+    
+    # Calculate consistent color scale range
+    z_min = np.nanmin(beta_matrix)
+    z_max = np.nanmax(beta_matrix)
+    z_range = max(abs(z_min), abs(z_max))
+    
     fig_hm = go.Figure(go.Heatmap(
         z=beta_matrix,
         x=[f"{q:.2f}" for q in theta_quantiles],
         y=[f"{q:.2f}" for q in tau_quantiles],
         colorscale="RdBu_r",
         colorbar_title="Coefficient",
-        zmid=0
+        zmid=0,
+        zmin=-z_range,
+        zmax=z_range
     ))
     fig_hm.update_layout(
         title=f"QQR Coefficients {title_suffix}",
@@ -704,14 +712,17 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
     )
     st.plotly_chart(fig_hm, use_container_width=True)
 
-    # --- 3D Surface
+    # --- 3D Surface (FIXED)
     st.subheader("📈 QQR 3D Surface")
     fig_3d = go.Figure(data=[go.Surface(
         z=beta_matrix,
         x=theta_quantiles,
         y=tau_quantiles,
         colorscale="RdBu_r",
-        showscale=True
+        showscale=True,
+        cmin=-z_range,
+        cmax=z_range,
+        cmid=0
     )])
     fig_3d.update_layout(
         scene=dict(
@@ -745,13 +756,24 @@ def run_qqr_with_robustness(y, x, title_suffix=""):
         st.subheader("🔬 Statistically Significant (p < 0.05)")
         sig_mask = p_values < 0.05
         sig_z = np.where(sig_mask, beta_matrix, np.nan)
+        
+        # Use same color scale range for consistency
+        sig_z_min = np.nanmin(sig_z)
+        sig_z_max = np.nanmax(sig_z)
+        if not np.isnan(sig_z_min) and not np.isnan(sig_z_max):
+            sig_z_range = max(abs(sig_z_min), abs(sig_z_max))
+        else:
+            sig_z_range = z_range
+        
         fig_sig = go.Figure(go.Heatmap(
             z=sig_z,
             x=[f"{q:.2f}" for q in theta_quantiles],
             y=[f"{q:.2f}" for q in tau_quantiles],
             colorscale="RdBu_r",
             colorbar_title="Significant Coefficients",
-            zmid=0
+            zmid=0,
+            zmin=-sig_z_range,
+            zmax=sig_z_range
         ))
         fig_sig.update_layout(
             title=f"Significant QQR Coefficients {title_suffix}",
